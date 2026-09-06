@@ -2,11 +2,18 @@ def appname = "hello-newapp"
 def repo = "elevy99927"  // Replace with your DockerHub username
 def appimage = "${repo}/${appname}"
 def apptag = "${env.BUILD_NUMBER}"
-def dockerImage
 
 podTemplate(containers: [
       containerTemplate(name: 'jnlp', image: 'jenkins/inbound-agent', ttyEnabled: true),
-      containerTemplate(name: 'docker', image: 'docker:dind', command: 'cat', ttyEnabled: true, privileged: true)
+    containerTemplate(
+        name: 'docker',
+        image: 'docker:26-dind',
+        privileged: true,
+        args: '--storage-driver=vfs --host=tcp://0.0.0.0:2375'
+    )
+  ],
+   volumes: [
+    emptyDirVolume(mountPath: '/var/run', memory: false)
   ])
   {
     node(POD_LABEL) {
@@ -20,13 +27,11 @@ podTemplate(containers: [
         stage('build') {
             container('docker') {
               echo "Building docker image..."
-              script {
-                dockerImage = docker.build("${appimage}:${apptag}")
-              }
+              sh "docker build . -t $appimage"
             }
         } //end build
 
-        // Requires the "Docker Pipeline" plugin (docker-workflow) for docker.build/docker.withRegistry.
+        // Requires the "Docker Pipeline" plugin (docker-workflow) for docker.withRegistry/docker.image.
         // Install: Manage Jenkins > Plugins > Available plugins > "Docker Pipeline".
         // Configure credentials: Manage Jenkins > Credentials > (global) > Add Credentials
         //   Kind: "Username with password", ID: dockerhub-creds, Username: Docker Hub username,
@@ -35,11 +40,10 @@ podTemplate(containers: [
             container('docker') {
               script {
                 docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-creds') {
-                  dockerImage.push()
+                  docker.image("$appimage").push()
                 }
               }
             }
         } //end push
     }
 }
-
